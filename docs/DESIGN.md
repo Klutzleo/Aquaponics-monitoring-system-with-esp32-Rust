@@ -39,23 +39,61 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 | Parameter | Sensor | Target Range | Alert Threshold |
 |-----------|--------|-------------|-----------------|
 | pH | Atlas Scientific EZO-pH | 6.8 – 7.2 | < 6.5 or > 7.8 |
-| Ammonia (NH₃) | Atlas Scientific EZO-NH3 | 0 ppm | > 1 ppm |
+| Ammonia — un-ionized (NH₃) | Atlas Scientific EZO-NH3 | 0 ppm | > 0.05 ppm (chronic) / toxicity onset ~0.02 ppm |
+| Ammonia — total (TAN) | Atlas Scientific EZO-NH3 | 0 ppm | > 1 ppm (reference only — see note) |
 | Nitrite (NO₂) | Atlas Scientific EZO-NO2 | 0 ppm | > 0.5 ppm |
 | Nitrate (NO₃) | Atlas Scientific EZO-NO3 | 5 – 150 ppm | > 200 ppm |
 | Dissolved Oxygen | Atlas Scientific EZO-DO | > 5 ppm | < 4 ppm |
 
+> **Ammonia threshold note:** Un-ionized ammonia (NH₃) is the toxic species to channel catfish — literature consensus puts chronic-safe exposure below ~0.05 ppm, with toxicity effects starting around 0.02 ppm, and toxicity increasing at higher pH/temperature. This is very different from a flat 1 ppm total ammonia threshold. **TODO: verify which ammonia species the Atlas Scientific EZO-NH3 probe actually reports (un-ionized NH₃ vs. total ammonia nitrogen/TAN)** before trusting either threshold in production alerting — the probe spec should confirm this, but do not assume.
+
 ### Physical
 | Parameter | Sensor | Notes |
 |-----------|--------|-------|
-| Water Temperature | DS18B20 | Waterproof, 1-Wire protocol, ~$3 |
+| Water Temperature | DS18B20 | Waterproof, 1-Wire protocol, ~$3. Use the ESP32 RMT peripheral for 1-Wire timing rather than bit-banging — naive bit-banged implementations see checksum failures at roughly 1-in-50 transactions. |
 | Water Level | Ultrasonic (HC-SR04) | Detects low water / evaporation loss |
 | Flow Rate | YF-S201 Hall effect sensor | Confirms pump is actually running |
 
 ### Environment
 | Parameter | Sensor | Notes |
 |-----------|--------|-------|
-| Air Temperature | DHT22 | Combined temp/humidity sensor |
+| Air Temperature | DHT22 | Combined temp/humidity sensor. Timing-sensitive: build in release mode, poll no more than every ~500ms, and configure the GPIO as open-drain with no internal pull — otherwise reads spuriously time out. |
 | Humidity | DHT22 | Same sensor as above |
+
+---
+
+## Hardware Alternatives — Probe Comparison
+
+Atlas Scientific EZO circuits are the default plan (see Sensors table above), but they're not the only option for every parameter. Comparison researched for this project:
+
+### pH
+| | Atlas Scientific EZO-pH | DFRobot Gravity Analog pH |
+|---|---|---|
+| Cost | ~$70-90 | ~$15-25 |
+| Accuracy | ±0.002 pH | ±0.1 pH |
+| Calibration interval | Monthly (stable) to weekly (field/fluctuating temp) | Monthly, weekly if heavily used |
+| Interface | UART/I2C, digital ASCII output | Analog voltage → ESP32 ADC |
+| Rust work needed | Custom EZO driver (no crate exists) | None — `esp-idf-hal` ADC read |
+| Continuous outdoor duty | Built for it | DFRobot markets it as "lab grade" — less proven for 24/7 outdoor temp swings |
+
+Target range is 6.8–7.2 (a 0.4 pH window), so DFRobot's ±0.1 accuracy is still usable for threshold alerting, just noisier than Atlas's ±0.002.
+
+### Dissolved Oxygen
+| | Atlas Scientific EZO-DO | DFRobot Gravity Analog DO |
+|---|---|---|
+| Cost | ~$150+ | ~$50-60 |
+| Type | Galvanic | Galvanic, no polarization wait |
+| Maintenance | Periodic membrane/electrolyte refresh | Membrane cap: 1-2mo (muddy water) / 4-5mo (clean); electrolyte (0.5 mol/L NaOH) refill monthly |
+| Noise handling | Good | Explicitly marketed as low-jitter even with pump/heater noise nearby — relevant since our pump runs continuously |
+| Rust work needed | Custom driver | None — analog ADC |
+
+DO is the parameter where DFRobot looks most competitive: purpose-built for continuous immersion near pump noise, a third of the cost, zero custom driver work.
+
+### Ammonia / Nitrite / Nitrate — no real budget alternative
+DFRobot does not sell consumer-affordable ISE probes for NH₃/NO₂/NO₃. Atlas Scientific EZO is effectively the only option at the hobbyist price point for these three.
+
+### Recommendation
+Since the EZO driver has to be written anyway for ammonia/nitrite/nitrate (Phase 2), staying with Atlas Scientific EZO across the board (pH + DO included) avoids maintaining two parallel probe-reading code paths (analog ADC vs. UART/I2C ASCII protocol) for one shared driver. The DFRobot route only makes sense if ammonia/nitrite/nitrate monitoring is dropped or handled manually (test strips) — a valid option for a Year-1 hobby system, but not what this doc currently plans for.
 
 ---
 
@@ -148,6 +186,7 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 - [ ] Integrate Atlas Scientific pH probe
 - [ ] Integrate dissolved oxygen probe
 - [ ] Ammonia / nitrite / nitrate (if budget allows)
+- [ ] Write Rust driver for Atlas Scientific EZO UART/I2C protocol (no existing crate — protocol is plain ASCII commands, straightforward to implement)
 - [ ] Send alerts via MQTT
 
 ### Phase 3 — Control & Automation
@@ -190,4 +229,6 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 
 ---
 
-*v0.1 — initial design doc*
+*v0.3 — added probe hardware comparison (Atlas Scientific vs. DFRobot) with recommendation*
+
+*v0.2 — revised ammonia threshold (un-ionized vs. total), added firmware implementation notes (DS18B20 RMT, DHT22 timing, EZO driver gap)*
