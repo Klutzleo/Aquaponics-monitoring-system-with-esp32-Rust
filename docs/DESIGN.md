@@ -15,7 +15,9 @@ An ESP32-based aquaponics monitoring and control system written in Rust. Designe
 - **Framework:** esp-idf via esp-rs (std enabled)
 - **Language:** Rust
 - **Power:** Mains powered via outdoor GFCI outlet (solar expansion possible later)
+- **Power-loss backup:** Small battery or supercap dedicated to the ESP32 + radio, sized only to survive long enough to send one last-gasp MQTT alert before shutdown — see **System State Monitoring** below. Without this, the device meant to report a power outage goes dark at the exact moment power is lost, defeating the alert.
 - **Connectivity:** WiFi to home network
+- **Enclosure:** Weatherproof, IP65+ minimum. Atwater summers hit 110°F ambient in direct sun, and a sealed box can run meaningfully hotter inside — plan for ventilation or shading rather than a fully sealed sun-facing box, to keep the ESP32 and DHT22 within their rated operating temperature.
 
 ---
 
@@ -41,7 +43,7 @@ Chemistry monitoring splits into three tiers based on how dangerous and how fast
 
 1. **pH + Dissolved Oxygen — automated, cheap.** These drift slowly enough that a budget analog probe catches a problem in time.
 2. **Ammonia — automated, worth the cost.** The fastest-acting fish killer of the group; a spike can turn toxic in hours, so this is the one probe where a real-time alert matters more than saving money.
-3. **Nitrite + Nitrate — manual, no sensor.** These build up over days/weeks, giving plenty of warning from a cheap test-strip kit checked on a schedule. Automating them would mostly buy convenience, not safety.
+3. **Nitrite + Nitrate + Alkalinity (KH) — manual, no sensor.** These build up or deplete over days/weeks, giving plenty of warning from a cheap test kit checked on a schedule. KH in particular is what silently depletes as nitrification produces acid — once it bottoms out, pH crashes suddenly instead of drifting predictably, which is one of the most common real-world aquaponics failure modes. All three come from the same test kit already budgeted for nitrite/nitrate, at no extra cost.
 
 | Parameter | Sensor | Target Range | Alert Threshold |
 |-----------|--------|-------------|-----------------|
@@ -51,6 +53,7 @@ Chemistry monitoring splits into three tiers based on how dangerous and how fast
 | Ammonia — total (TAN) | Atlas Scientific EZO-NH3 | 0 ppm | > 1 ppm (reference only — see note) |
 | Nitrite (NO₂) | **Manual** — liquid test kit (e.g. API Freshwater Master Test Kit), not wired to the ESP32 | 0 ppm | > 0.5 ppm — check 2-3x/week, more often in summer heat |
 | Nitrate (NO₃) | **Manual** — same test kit as nitrite | 5 – 150 ppm | > 200 ppm — check 2-3x/week, more often in summer heat |
+| Alkalinity (KH) | **Manual** — same test kit as nitrite/nitrate | 100 – 180 ppm (as CaCO₃) | < 60 ppm — risk of sudden pH crash as buffering capacity depletes |
 
 > **Ammonia threshold note:** Un-ionized ammonia (NH₃) is the toxic species to channel catfish — literature consensus puts chronic-safe exposure below ~0.05 ppm, with toxicity effects starting around 0.02 ppm, and toxicity increasing at higher pH/temperature. This is very different from a flat 1 ppm total ammonia threshold. **TODO: verify which ammonia species the Atlas Scientific EZO-NH3 probe actually reports (un-ionized NH₃ vs. total ammonia nitrogen/TAN)** before trusting either threshold in production alerting — the probe spec should confirm this, but do not assume.
 
@@ -117,7 +120,7 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 - **Pump status** — on/off, confirm via flow sensor
 - **Heater status** — on/off (winter use)
 - **Flood/drain cycle** — grow bed timing via configurable schedule
-- **Power status** — detect outage condition
+- **Power status** — detect outage condition. Requires the battery/supercap backup noted under **Hardware Target**: on loss of mains power, the ESP32 runs briefly on backup power, immediately sends a "power lost" MQTT alert, then shuts down cleanly rather than browning out mid-operation. On restore, it reconnects and sends a "power restored" message so outage duration is known.
 
 ---
 
@@ -167,8 +170,8 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 ## Connectivity
 
 - **WiFi** — primary connection to home network
-- **MQTT** — lightweight messaging protocol for alerts and data
-- **OTA updates** — update firmware without physical access to device
+- **MQTT** — lightweight messaging protocol for alerts and data. **Security:** use TLS plus username/password (or client cert) auth on the broker from the start, not just once Phase 3 ships. Phase 3 puts pump/heater/aeration relay control behind MQTT commands — an unauthenticated broker on the home network means anything that can reach it can shut off aeration. Cheaper to design in now than retrofit later.
+- **OTA updates** — update firmware without physical access to device. Should be signed/authenticated once implemented — an unauthenticated OTA endpoint is a remote-code-execution risk on a device with relay control over pump and heater.
 
 ---
 
@@ -177,7 +180,7 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 | Crate | Purpose |
 |-------|---------|
 | `esp-idf-hal` | ESP32 hardware abstraction |
-| `esp-idf-svc` | WiFi, MQTT, NTP services |
+| `esp-idf-svc` | WiFi, MQTT (TLS-capable via mbedTLS bindings), NTP services |
 | `embedded-hal` | Sensor trait abstractions |
 | `ds18b20` | DS18B20 temperature sensor driver |
 | `dht-sensor` | DHT22 driver |
@@ -236,6 +239,7 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 | Target water temp | 65 – 85°F |
 | Location | Atwater, CA — Merced County |
 | Climate | Extreme heat summers (110°F), near-freeze winters |
+| Predator protection | Netting/cover over the tank — raccoons and herons are realistic backyard threats in this area, not an electronics problem but cheap to prevent |
 
 ---
 
@@ -246,8 +250,11 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 - ~~Atlas Scientific probes are gold standard but $50-80 each~~ — corrected: that figure was the bare EZO circuit only, not the probe. All-in cost per parameter is actually $140-260. See the hybrid plan above for how this project splits cheap (DFRobot) vs. worth-it (Atlas EZO ammonia) vs. manual (nitrite/nitrate) to control cost.
 - Battery backup air pump is critical hardware regardless of this project
 - Year 1: personal/non-commercial use. Year 2: farmers market sales under "Fish Around and Find Out" brand
+- Gap review (July 2026): added ESP32 power-loss backup design, alkalinity (KH) tracking, MQTT/OTA security requirements, enclosure thermal rating, and predator protection — see Hardware Target, Water Chemistry, Connectivity, and Physical System Reference above
 
 ---
+
+*v0.5 — closed gap review: ESP32 power-loss backup for outage alerting, alkalinity (KH) tracking added to manual test routine, MQTT/OTA security requirements, enclosure thermal/IP rating, predator protection note*
 
 *v0.4 — adopted hybrid chemistry-sensing plan (DFRobot pH/DO, Atlas EZO ammonia, manual nitrite/nitrate), restructured Phase 2 build plan, corrected probe cost note*
 
