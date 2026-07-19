@@ -35,17 +35,26 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 
 ## Sensors & Parameters
 
-### Water Chemistry
+### Water Chemistry — Hybrid Sensing Plan
+
+Chemistry monitoring splits into three tiers based on how dangerous and how fast-moving each parameter is, not a single sensor brand across the board:
+
+1. **pH + Dissolved Oxygen — automated, cheap.** These drift slowly enough that a budget analog probe catches a problem in time.
+2. **Ammonia — automated, worth the cost.** The fastest-acting fish killer of the group; a spike can turn toxic in hours, so this is the one probe where a real-time alert matters more than saving money.
+3. **Nitrite + Nitrate — manual, no sensor.** These build up over days/weeks, giving plenty of warning from a cheap test-strip kit checked on a schedule. Automating them would mostly buy convenience, not safety.
+
 | Parameter | Sensor | Target Range | Alert Threshold |
 |-----------|--------|-------------|-----------------|
-| pH | Atlas Scientific EZO-pH | 6.8 – 7.2 | < 6.5 or > 7.8 |
+| pH | DFRobot Gravity Analog pH (ESP32 ADC) | 6.8 – 7.2 | < 6.5 or > 7.8 |
+| Dissolved Oxygen | DFRobot Gravity Analog DO (ESP32 ADC) | > 5 ppm | < 4 ppm |
 | Ammonia — un-ionized (NH₃) | Atlas Scientific EZO-NH3 | 0 ppm | > 0.05 ppm (chronic) / toxicity onset ~0.02 ppm |
 | Ammonia — total (TAN) | Atlas Scientific EZO-NH3 | 0 ppm | > 1 ppm (reference only — see note) |
-| Nitrite (NO₂) | Atlas Scientific EZO-NO2 | 0 ppm | > 0.5 ppm |
-| Nitrate (NO₃) | Atlas Scientific EZO-NO3 | 5 – 150 ppm | > 200 ppm |
-| Dissolved Oxygen | Atlas Scientific EZO-DO | > 5 ppm | < 4 ppm |
+| Nitrite (NO₂) | **Manual** — liquid test kit (e.g. API Freshwater Master Test Kit), not wired to the ESP32 | 0 ppm | > 0.5 ppm — check 2-3x/week, more often in summer heat |
+| Nitrate (NO₃) | **Manual** — same test kit as nitrite | 5 – 150 ppm | > 200 ppm — check 2-3x/week, more often in summer heat |
 
 > **Ammonia threshold note:** Un-ionized ammonia (NH₃) is the toxic species to channel catfish — literature consensus puts chronic-safe exposure below ~0.05 ppm, with toxicity effects starting around 0.02 ppm, and toxicity increasing at higher pH/temperature. This is very different from a flat 1 ppm total ammonia threshold. **TODO: verify which ammonia species the Atlas Scientific EZO-NH3 probe actually reports (un-ionized NH₃ vs. total ammonia nitrogen/TAN)** before trusting either threshold in production alerting — the probe spec should confirm this, but do not assume.
+
+> **Stretch goal:** if budget allows later, nitrite and nitrate can be automated the same way as ammonia (Atlas Scientific EZO-NO2 / EZO-NO3), reusing the same EZO driver already written for the ammonia probe. Not planned for the initial build.
 
 ### Physical
 | Parameter | Sensor | Notes |
@@ -89,11 +98,17 @@ Target range is 6.8–7.2 (a 0.4 pH window), so DFRobot's ±0.1 accuracy is stil
 
 DO is the parameter where DFRobot looks most competitive: purpose-built for continuous immersion near pump noise, a third of the cost, zero custom driver work.
 
-### Ammonia / Nitrite / Nitrate — no real budget alternative
-DFRobot does not sell consumer-affordable ISE probes for NH₃/NO₂/NO₃. Atlas Scientific EZO is effectively the only option at the hobbyist price point for these three.
+### Ammonia / Nitrite / Nitrate — no real budget alternative for automated sensing
+DFRobot does not sell consumer-affordable ISE probes for NH₃/NO₂/NO₃. Atlas Scientific EZO is effectively the only option at the hobbyist price point for automated sensing of these three. Also checked DFRobot's industrial RS485 ammonia sensor (SEN0711) as a possible cheaper automated alternative — it's actually *more* expensive (~$359) than Atlas EZO-NH3, so it's not a cost win. The real lever isn't a cheaper sensor, it's dropping automation for the parameters where manual testing is safe enough (see below).
 
-### Recommendation
-Since the EZO driver has to be written anyway for ammonia/nitrite/nitrate (Phase 2), staying with Atlas Scientific EZO across the board (pH + DO included) avoids maintaining two parallel probe-reading code paths (analog ADC vs. UART/I2C ASCII protocol) for one shared driver. The DFRobot route only makes sense if ammonia/nitrite/nitrate monitoring is dropped or handled manually (test strips) — a valid option for a Year-1 hobby system, but not what this doc currently plans for.
+### Decision: hybrid plan
+Rather than choosing one brand across the board, the plan splits by how dangerous and fast-moving each parameter is:
+
+- **pH + DO → DFRobot analog.** Cheap (~$65-85 combined), automated, and accurate enough for these slow-moving parameters. Only costs an `esp-idf-hal` ADC read, no custom driver.
+- **Ammonia → Atlas Scientific EZO-NH3.** The one parameter that can turn toxic in hours, so it keeps the real-time automated sensor (~$200-230) despite the cost — this is where the EZO Rust driver actually gets written.
+- **Nitrite + Nitrate → manual test kit, no sensor.** These move slowly enough that a $20-30 liquid test kit checked 2-3x/week (more in summer heat) catches a problem in time. Automating them would mostly buy convenience, not safety, at ~$400-500 combined — not worth it for a Year-1 hobby build.
+
+Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas EZO-NH3 + test kit), versus ~$916-1,140 for automating all five via Atlas EZO, or ~$85-115 for going fully manual and skipping ammonia automation too (not recommended — see above).
 
 ---
 
@@ -118,7 +133,7 @@ Since the EZO driver has to be written anyway for ammonia/nitrite/nitrate (Phase
 - Power outage detected
 
 ### Warning Alerts (non-urgent)
-- Nitrate > 150 ppm
+- Nitrate > 150 ppm *(manual test-kit reading in the hybrid plan — not an ESP32-triggered alert unless/until the stretch-tier EZO-NO3 sensor is added)*
 - pH drifting (trending toward threshold)
 - Air temp extreme (> 105°F or < 35°F)
 
@@ -182,12 +197,17 @@ Since the EZO driver has to be written anyway for ammonia/nitrite/nitrate (Phase
 - [ ] Log readings to serial output
 - [ ] Basic threshold alerting
 
-### Phase 2 — Chemistry Sensors
-- [ ] Integrate Atlas Scientific pH probe
-- [ ] Integrate dissolved oxygen probe
-- [ ] Ammonia / nitrite / nitrate (if budget allows)
+### Phase 2 — Chemistry Sensors (Hybrid Plan)
+- [ ] Integrate DFRobot Gravity analog pH sensor (ESP32 ADC, no custom driver)
+- [ ] Integrate DFRobot Gravity analog dissolved oxygen sensor (ESP32 ADC, no custom driver)
 - [ ] Write Rust driver for Atlas Scientific EZO UART/I2C protocol (no existing crate — protocol is plain ASCII commands, straightforward to implement)
+- [ ] Integrate Atlas Scientific EZO-NH3 ammonia sensor using that driver
+- [ ] Set up manual testing routine for nitrite/nitrate (liquid test kit, 2-3x/week) — not wired to the ESP32 in this phase
 - [ ] Send alerts via MQTT
+
+**Stretch / "baller" tier** (budget-permitting, not planned for initial build):
+- [ ] Automate nitrite via Atlas Scientific EZO-NO2, reusing the ammonia driver
+- [ ] Automate nitrate via Atlas Scientific EZO-NO3, reusing the ammonia driver
 
 ### Phase 3 — Control & Automation
 - [ ] Relay board integration
@@ -222,12 +242,14 @@ Since the EZO driver has to be written anyway for ammonia/nitrite/nitrate (Phase
 ## Notes
 
 - Physical aquaponics system build comes FIRST — ESP32 project starts after system is running
-- Start with cheap sensors (DS18B20, DHT22, ultrasonic) before investing in Atlas Scientific probes
-- Atlas Scientific probes are gold standard but $50-80 each — add in Phase 2
+- Start with cheap sensors (DS18B20, DHT22, ultrasonic) before investing in chemistry probes
+- ~~Atlas Scientific probes are gold standard but $50-80 each~~ — corrected: that figure was the bare EZO circuit only, not the probe. All-in cost per parameter is actually $140-260. See the hybrid plan above for how this project splits cheap (DFRobot) vs. worth-it (Atlas EZO ammonia) vs. manual (nitrite/nitrate) to control cost.
 - Battery backup air pump is critical hardware regardless of this project
 - Year 1: personal/non-commercial use. Year 2: farmers market sales under "Fish Around and Find Out" brand
 
 ---
+
+*v0.4 — adopted hybrid chemistry-sensing plan (DFRobot pH/DO, Atlas EZO ammonia, manual nitrite/nitrate), restructured Phase 2 build plan, corrected probe cost note*
 
 *v0.3 — added probe hardware comparison (Atlas Scientific vs. DFRobot) with recommendation*
 
