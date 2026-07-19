@@ -1,11 +1,11 @@
 # Fish Around and Find Out — Aquaponics Monitor
-## Design Document v0.5
+## Design Document v0.6
 
 ---
 
 ## Project Overview
 
-An ESP32-based aquaponics monitoring and control system written in Rust. Designed for a single IBC tote backyard aquaponics system running channel catfish and leafy greens/herbs in Atwater, CA (Central Valley). Extreme climate conditions — summers up to 110°F, winters near freezing — are a primary design constraint.
+An ESP32-based aquaponics monitoring and control system written in Rust. Designed for a single IBC tote backyard aquaponics system running channel catfish and leafy greens/herbs in California's Central Valley. Extreme climate conditions — summers up to 110°F, winters near freezing — are a primary design constraint.
 
 ---
 
@@ -17,7 +17,7 @@ An ESP32-based aquaponics monitoring and control system written in Rust. Designe
 - **Power:** Mains powered via outdoor GFCI outlet (solar expansion possible later)
 - **Power-loss backup:** Small battery or supercap dedicated to the ESP32 + radio, sized only to survive long enough to send one last-gasp MQTT alert before shutdown — see **System State Monitoring** below. Without this, the device meant to report a power outage goes dark at the exact moment power is lost, defeating the alert.
 - **Connectivity:** WiFi to home network
-- **Enclosure:** Weatherproof, IP65+ minimum. Atwater summers hit 110°F ambient in direct sun, and a sealed box can run meaningfully hotter inside — plan for ventilation or shading rather than a fully sealed sun-facing box, to keep the ESP32 and DHT22 within their rated operating temperature.
+- **Enclosure:** Weatherproof, IP65+ minimum. Central Valley summers hit 110°F ambient in direct sun, and a sealed box can run meaningfully hotter inside — plan for ventilation or shading rather than a fully sealed sun-facing box, to keep the ESP32 and DHT22 within their rated operating temperature.
 
 ---
 
@@ -237,7 +237,7 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 | Flood cycle | 15 min on / 45 min off |
 | Target pH | 6.8 – 7.2 |
 | Target water temp | 65 – 85°F |
-| Location | Atwater, CA — Merced County |
+| Location | Central Valley, CA |
 | Climate | Extreme heat summers (110°F), near-freeze winters |
 | Predator protection | Netting/cover over the tank — raccoons and herons are realistic backyard threats in this area, not an electronics problem but cheap to prevent |
 
@@ -253,6 +253,8 @@ Estimated chemistry cost under this plan: **~$300-340** (DFRobot pH+DO + Atlas E
 - Gap review (July 2026): added ESP32 power-loss backup design, alkalinity (KH) tracking, MQTT/OTA security requirements, enclosure thermal rating, and predator protection — see Hardware Target, Water Chemistry, Connectivity, and Physical System Reference above
 
 ---
+
+*v0.6 — removed specific city/county location for privacy, generalized to "Central Valley, CA"*
 
 *v0.5 — closed gap review: ESP32 power-loss backup for outage alerting, alkalinity (KH) tracking added to manual test routine, MQTT/OTA security requirements, enclosure thermal/IP rating, predator protection note*
 
