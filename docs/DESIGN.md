@@ -39,22 +39,25 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 | Parameter | Sensor | Target Range | Alert Threshold |
 |-----------|--------|-------------|-----------------|
 | pH | Atlas Scientific EZO-pH | 6.8 – 7.2 | < 6.5 or > 7.8 |
-| Ammonia (NH₃) | Atlas Scientific EZO-NH3 | 0 ppm | > 1 ppm |
+| Ammonia — un-ionized (NH₃) | Atlas Scientific EZO-NH3 | 0 ppm | > 0.05 ppm (chronic) / toxicity onset ~0.02 ppm |
+| Ammonia — total (TAN) | Atlas Scientific EZO-NH3 | 0 ppm | > 1 ppm (reference only — see note) |
 | Nitrite (NO₂) | Atlas Scientific EZO-NO2 | 0 ppm | > 0.5 ppm |
 | Nitrate (NO₃) | Atlas Scientific EZO-NO3 | 5 – 150 ppm | > 200 ppm |
 | Dissolved Oxygen | Atlas Scientific EZO-DO | > 5 ppm | < 4 ppm |
 
+> **Ammonia threshold note:** Un-ionized ammonia (NH₃) is the toxic species to channel catfish — literature consensus puts chronic-safe exposure below ~0.05 ppm, with toxicity effects starting around 0.02 ppm, and toxicity increasing at higher pH/temperature. This is very different from a flat 1 ppm total ammonia threshold. **TODO: verify which ammonia species the Atlas Scientific EZO-NH3 probe actually reports (un-ionized NH₃ vs. total ammonia nitrogen/TAN)** before trusting either threshold in production alerting — the probe spec should confirm this, but do not assume.
+
 ### Physical
 | Parameter | Sensor | Notes |
 |-----------|--------|-------|
-| Water Temperature | DS18B20 | Waterproof, 1-Wire protocol, ~$3 |
+| Water Temperature | DS18B20 | Waterproof, 1-Wire protocol, ~$3. Use the ESP32 RMT peripheral for 1-Wire timing rather than bit-banging — naive bit-banged implementations see checksum failures at roughly 1-in-50 transactions. |
 | Water Level | Ultrasonic (HC-SR04) | Detects low water / evaporation loss |
 | Flow Rate | YF-S201 Hall effect sensor | Confirms pump is actually running |
 
 ### Environment
 | Parameter | Sensor | Notes |
 |-----------|--------|-------|
-| Air Temperature | DHT22 | Combined temp/humidity sensor |
+| Air Temperature | DHT22 | Combined temp/humidity sensor. Timing-sensitive: build in release mode, poll no more than every ~500ms, and configure the GPIO as open-drain with no internal pull — otherwise reads spuriously time out. |
 | Humidity | DHT22 | Same sensor as above |
 
 ---
@@ -148,6 +151,7 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 - [ ] Integrate Atlas Scientific pH probe
 - [ ] Integrate dissolved oxygen probe
 - [ ] Ammonia / nitrite / nitrate (if budget allows)
+- [ ] Write Rust driver for Atlas Scientific EZO UART/I2C protocol (no existing crate — protocol is plain ASCII commands, straightforward to implement)
 - [ ] Send alerts via MQTT
 
 ### Phase 3 — Control & Automation
@@ -190,4 +194,4 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 
 ---
 
-*v0.1 — initial design doc*
+*v0.2 — revised ammonia threshold (un-ionized vs. total), added firmware implementation notes (DS18B20 RMT, DHT22 timing, EZO driver gap)*
