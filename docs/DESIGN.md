@@ -62,6 +62,41 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 
 ---
 
+## Hardware Alternatives — Probe Comparison
+
+Atlas Scientific EZO circuits are the default plan (see Sensors table above), but they're not the only option for every parameter. Comparison researched for this project:
+
+### pH
+| | Atlas Scientific EZO-pH | DFRobot Gravity Analog pH |
+|---|---|---|
+| Cost | ~$70-90 | ~$15-25 |
+| Accuracy | ±0.002 pH | ±0.1 pH |
+| Calibration interval | Monthly (stable) to weekly (field/fluctuating temp) | Monthly, weekly if heavily used |
+| Interface | UART/I2C, digital ASCII output | Analog voltage → ESP32 ADC |
+| Rust work needed | Custom EZO driver (no crate exists) | None — `esp-idf-hal` ADC read |
+| Continuous outdoor duty | Built for it | DFRobot markets it as "lab grade" — less proven for 24/7 outdoor temp swings |
+
+Target range is 6.8–7.2 (a 0.4 pH window), so DFRobot's ±0.1 accuracy is still usable for threshold alerting, just noisier than Atlas's ±0.002.
+
+### Dissolved Oxygen
+| | Atlas Scientific EZO-DO | DFRobot Gravity Analog DO |
+|---|---|---|
+| Cost | ~$150+ | ~$50-60 |
+| Type | Galvanic | Galvanic, no polarization wait |
+| Maintenance | Periodic membrane/electrolyte refresh | Membrane cap: 1-2mo (muddy water) / 4-5mo (clean); electrolyte (0.5 mol/L NaOH) refill monthly |
+| Noise handling | Good | Explicitly marketed as low-jitter even with pump/heater noise nearby — relevant since our pump runs continuously |
+| Rust work needed | Custom driver | None — analog ADC |
+
+DO is the parameter where DFRobot looks most competitive: purpose-built for continuous immersion near pump noise, a third of the cost, zero custom driver work.
+
+### Ammonia / Nitrite / Nitrate — no real budget alternative
+DFRobot does not sell consumer-affordable ISE probes for NH₃/NO₂/NO₃. Atlas Scientific EZO is effectively the only option at the hobbyist price point for these three.
+
+### Recommendation
+Since the EZO driver has to be written anyway for ammonia/nitrite/nitrate (Phase 2), staying with Atlas Scientific EZO across the board (pH + DO included) avoids maintaining two parallel probe-reading code paths (analog ADC vs. UART/I2C ASCII protocol) for one shared driver. The DFRobot route only makes sense if ammonia/nitrite/nitrate monitoring is dropped or handled manually (test strips) — a valid option for a Year-1 hobby system, but not what this doc currently plans for.
+
+---
+
 ## System State Monitoring
 
 - **Pump status** — on/off, confirm via flow sensor
@@ -193,5 +228,7 @@ Sensors → ESP32 → Data Processing → Alerts / Logging / Control
 - Year 1: personal/non-commercial use. Year 2: farmers market sales under "Fish Around and Find Out" brand
 
 ---
+
+*v0.3 — added probe hardware comparison (Atlas Scientific vs. DFRobot) with recommendation*
 
 *v0.2 — revised ammonia threshold (un-ionized vs. total), added firmware implementation notes (DS18B20 RMT, DHT22 timing, EZO driver gap)*
